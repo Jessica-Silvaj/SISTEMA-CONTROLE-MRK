@@ -53,6 +53,17 @@ export default async function handler(request) {
             const ativo = Number(body.ativo ?? 1) ? 1 : 0;
             if (!nome) return json(400, { error: 'nome_item é obrigatório' });
 
+            const [dupes] = await pool.query(
+                'SELECT 1 FROM itens WHERE UPPER(nome_item) = UPPER(?) LIMIT 1',
+                [nome]
+            );
+            if (dupes.length > 0) {
+                return json(400, {
+                    error: 'Já existe um item com este nome.',
+                    fieldErrors: { nome_item: 'Já existe um item com este nome.' }
+                });
+            }
+
             const [res] = await pool.execute(
                 `INSERT INTO itens (nome_item, ativo) VALUES (UPPER(?), ?)`,
                 [nome, ativo]
@@ -68,7 +79,30 @@ export default async function handler(request) {
 
             const fields = [];
             const params = [];
-            if (typeof body.nome_item === 'string') { fields.push('nome_item = UPPER(?)'); params.push(body.nome_item.trim()); }
+            if (typeof body.nome_item === 'string') {
+                const nomeNovo = body.nome_item.trim();
+                if (!nomeNovo) {
+                    return json(400, {
+                        error: 'nome_item é obrigatório',
+                        fieldErrors: { nome_item: 'Preencha o nome do item.' }
+                    });
+                }
+
+                // Duplicado (exclui o próprio id)
+                const [dupes] = await pool.query(
+                    'SELECT 1 FROM itens WHERE UPPER(nome_item) = UPPER(?) AND id_item <> ? LIMIT 1',
+                    [nomeNovo, id]
+                );
+                if (dupes.length > 0) {
+                    return json(400, {
+                        error: 'Já existe um item com este nome.',
+                        fieldErrors: { nome_item: 'Já existe um item com este nome.' }
+                    });
+                }
+                fields.push('nome_item = UPPER(?)');
+                params.push(nomeNovo);
+
+            }
             if (body.ativo !== undefined) { fields.push('ativo = ?'); params.push(Number(body.ativo) ? 1 : 0); }
             if (!fields.length) return json(400, { error: 'Nada para atualizar' });
 
