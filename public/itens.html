@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Itens Registrados</title>
+
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css" />
+</head>
+
+<body>
+    <div class="bg-noise" aria-hidden="true"></div>
+    <div class="bg-gradient" aria-hidden="true"></div>
+
+    <header class="topbar">
+        <div class="brand">
+            <h1><span>ITENS</span> REGISTRADOS</h1>
+        </div>
+        <div class="bar-accent"></div>
+    </header>
+
+    <main class="wrap">
+        <div class="top-actions">
+            <button class="btn" onclick="window.location.href='./index.html'">← Voltar</button>
+            <div class="searchbar">
+                <input id="busca" type="text" placeholder="Buscar por nome..." />
+                <button class="btn" id="btnBuscar">Buscar</button>
+            </div>
+            <button class="btn btn-primary" id="btnNovo">+ Novo</button>
+        </div>
+
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:60%">Nome</th>
+                        <th style="width:15%">Ativo</th>
+                        <th style="width:25%">Ações</th>
+                    </tr>
+                </thead>
+                <tbody id="listaItens">
+                    <tr>
+                        <td colspan="3" class="muted">Carregando...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- (novo) Controles de paginação -->
+        <div class="pagination">
+            <button type="button" id="btnPrev">« Anterior</button>
+            <span id="pageInfo"></span>
+            <button type="button" id="btnNext">Próxima »</button>
+            <span id="totalInfo"></span>
+        </div>
+
+    </main>
+
+    <footer class="foot">
+        <small>© <span id="y"></span> Meraki • v1.0</small>
+    </footer>
+
+    <!-- MODAL: FORM (Novo/Editar) -->
+    <div class="modal" id="modalForm" aria-hidden="true">
+        <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="mf-title">
+            <button class="modal-close" data-close>&times;</button>
+            <h2 id="mf-title" class="modal-title">Novo item</h2>
+
+            <form id="formItem" novalidate>
+                <input type="hidden" id="mf-id">
+
+                <label class="field">
+                    <span>Nome <b class="req">*</b></span>
+                    <input id="mf-nome" type="text" placeholder="Digite o nome" required />
+                    <small class="err" id="err-nome"></small>
+                </label>
+
+                <label class="field">
+                    <span>Status <b class="req">*</b></span>
+                    <select id="mf-ativo" required>
+                        <option value="">Selecione...</option>
+                        <option value="1">ATIVO</option>
+                        <option value="0">INATIVO</option>
+                    </select>
+                    <small class="err" id="err-ativo"></small>
+                </label>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn" data-close>Cancelar</button>
+                    <button type="submit" class="btn btn-primary" id="mf-submit">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: CONFIRMAR EXCLUSÃO -->
+    <div class="modal" id="modalConfirm" aria-hidden="true">
+        <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="mc-title">
+            <button class="modal-close" data-close>&times;</button>
+            <h2 id="mc-title" class="modal-title">Excluir item</h2>
+            <p id="mc-text" class="muted">Tem certeza que deseja excluir?</p>
+            <div class="modal-actions">
+                <button class="btn" id="mc-no">Não</button>
+                <button class="btn btn-del" id="mc-yes">Sim</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOASTS -->
+    <div id="toastContainer" class="toast-wrap"></div>
+
+    <!-- <script>
+
+        const API = '/api/itens'; // Netlify redirect → /.netlify/functions/itens
+        document.getElementById('y').textContent = new Date().getFullYear();
+
+        const btnNovo    = document.getElementById('btnNovo');
+        const btnPrev    = document.getElementById('btnPrev');
+        const btnNext    = document.getElementById('btnNext');
+        const pageInfo   = document.getElementById('pageInfo');
+        const totalInfo  = document.getElementById('totalInfo');
+
+        const PAGE_SIZE = 10;
+
+        let state = {
+        page: 1,
+        total: 0,
+        q: ''
+        };
+
+        // ====== LISTAGEM (sem paginação) ======
+        async function carregarItens(q = '') {
+            try {
+                const url = q ? `${API}?q=${encodeURIComponent(q)}` : API;
+                // url.searchParams.set('_ts', Date.now());  // evita cache na API
+                const res = await fetch(url, { cache: 'no-store' });
+                const data = await res.json();
+                const items = Array.isArray(data) ? data : (data.items || []);
+                renderTabela(data.items || []);
+            } catch (e) {
+                console.error(e);
+                document.getElementById('listaItens').innerHTML =
+                    `<tr><td colspan="3" class="muted">Falha ao carregar.</td></tr>`;
+                showToast('Erro ao carregar itens.', 'error');
+            }
+        }
+
+        function renderTabela(items) {
+            const tbody = document.getElementById('listaItens');
+            tbody.innerHTML = '';
+            if (!items.length) {
+                tbody.innerHTML = `<tr><td colspan="3" class="muted">Nenhum item encontrado.</td></tr>`;
+                return;
+            }
+            for (const item of items) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+          <td>${escapeHtml(item.nome_item ?? '')}</td>
+          <td>
+            <span class="badge ${item.ativo ? 'badge-on' : 'badge-off'}">
+              ${item.ativo ? 'Sim' : 'Não'}
+            </span>
+          </td>
+          <td class="actions">
+            <button class="btn btn-edit"
+              data-action="edit"
+              data-id="${item.id_item}"
+              data-nome="${escapeAttr(item.nome_item ?? '')}"
+              data-ativo="${item.ativo ? 1 : 0}">
+              Editar
+            </button>
+            <button class="btn btn-del"
+              data-action="delete"
+              data-id="${item.id_item}"
+              data-nome="${escapeAttr(item.nome_item ?? '')}">
+              Excluir
+            </button>
+          </td>
+        `;
+                tbody.appendChild(tr);
+            }
+        }
+
+        // ====== MODAIS: util ======
+        function openModal(el) {
+            el.classList.add('is-open'); el.setAttribute('aria-hidden', 'false');
+            const f = el.querySelector('input, select, button'); if (f) setTimeout(() => f.focus(), 40);
+            document.body.style.overflow = 'hidden';
+        }
+        function closeModal(el) { el.classList.remove('is-open'); el.setAttribute('aria-hidden', 'true'); document.body.style.overflow = ''; }
+        function bindModalCommon() {
+            document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => closeModal(b.closest('.modal'))));
+            document.querySelectorAll('.modal').forEach(m => m.addEventListener('click', e => { if (e.target.classList.contains('modal')) closeModal(m); }));
+            window.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.modal.is-open').forEach(m => closeModal(m)); });
+        }
+
+        // ====== MODAL FORM (Novo/Editar) ======
+        const modalForm = document.getElementById('modalForm');
+        const mfId = document.getElementById('mf-id');
+        const mfNome = document.getElementById('mf-nome');
+        const mfAtivo = document.getElementById('mf-ativo');
+        const mfTitle = document.getElementById('mf-title');
+        const mfSubmit = document.getElementById('mf-submit');
+        const errNome = document.getElementById('err-nome');
+        const errAtivo = document.getElementById('err-ativo');
+
+        document.getElementById('btnNovo').addEventListener('click', () => openFormModal('novo'));
+
+        function resetErrors() {
+            errNome.textContent = '';
+            errAtivo.textContent = '';
+            mfNome.classList.remove('invalid');
+            mfAtivo.classList.remove('invalid');
+        }
+
+        function openFormModal(mode, data = null) {
+            resetErrors();
+            mfTitle.textContent = mode === 'editar' ? 'Editar item' : 'Novo item';
+            mfSubmit.textContent = mode === 'editar' ? 'Salvar alterações' : 'Salvar';
+            mfId.value = data?.id ?? '';
+            mfNome.value = data?.nome ?? '';
+            mfAtivo.value = data?.ativo ?? '';
+            modalForm.dataset.mode = mode;
+            openModal(modalForm);
+        }
+
+        function validateForm() {
+            resetErrors();
+            let ok = true;
+            if (!mfNome.value.trim()) { errNome.textContent = 'Informe o nome.'; mfNome.classList.add('invalid'); ok = false; }
+            if (mfAtivo.value !== '0' && mfAtivo.value !== '1') { errAtivo.textContent = 'Selecione Ativo ou Inativo.'; mfAtivo.classList.add('invalid'); ok = false; }
+            return ok;
+        }
+
+        document.getElementById('formItem').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!validateForm()) { showToast('Preencha os campos obrigatórios.', 'error'); return; }
+
+            const payload = { nome_item: mfNome.value.trim(), ativo: Number(mfAtivo.value) };
+            try {
+                const mode = modalForm.dataset.mode;
+                if (mode === 'editar') {
+                    payload.id_item = Number(mfId.value);
+                    const r = await fetch(API, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                    if (!r.ok) throw new Error('Erro ao atualizar');
+                    showToast('Item atualizado com sucesso!', 'success');
+                } else {
+                    const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                    if (!r.ok) throw new Error('Erro ao salvar');
+                    showToast('Item cadastrado com sucesso!', 'success');
+                }
+                closeModal(modalForm);
+                carregarItens('');
+            } catch (err) {
+                console.error(err);
+                showToast('Falha ao salvar.', 'error');
+            }
+        });
+
+        // ====== MODAL CONFIRM (Excluir) ======
+        const modalConfirm = document.getElementById('modalConfirm');
+        const mcText = document.getElementById('mc-text');
+        const mcYes = document.getElementById('mc-yes');
+        const mcNo = document.getElementById('mc-no');
+        let deleteId = null;
+
+        mcNo.addEventListener('click', () => {
+            closeModal(modalConfirm);
+            showToast('Ação cancelada.', 'info');
+        });
+
+        function openConfirmModal(id, nome) {
+            deleteId = id;
+            mcText.textContent = `Deseja realmente excluir "${nome}"?`;
+            openModal(modalConfirm);
+        }
+
+        function forceReload() {
+            const url = new URL(location.href);
+            url.searchParams.set('_r', Date.now()); // evita cache do HTML/JS e de responses
+            location.replace(url.toString());       // substitui no histórico (não cria nova entrada)
+        }
+
+        mcYes.addEventListener('click', async () => {
+            if (!deleteId) return;
+            try {
+                const r = await fetch(`${API}?id=${deleteId}`, { method: 'DELETE' });
+                if (!r.ok) throw new Error('Erro ao excluir');
+
+                showToast('Item excluído com sucesso!', 'success');
+                closeModal(modalConfirm);
+
+                // recarrega a tela garantindo que não use nada em cache
+                forceReload();
+            } catch (err) {
+                console.error(err);
+                showToast('Falha ao excluir.', 'error');
+            } finally {
+                deleteId = null;
+            }
+        });
+
+        // Delegação dos botões da tabela (editar/excluir)
+        document.getElementById('listaItens').addEventListener('click', (e) => {
+            const btn = e.target.closest('button');
+            if (!btn) return;
+            const action = btn.dataset.action;
+            if (action === 'edit') {
+                openFormModal('editar', {
+                    id: Number(btn.dataset.id),
+                    nome: btn.dataset.nome,
+                    ativo: String(btn.dataset.ativo)
+                });
+            } else if (action === 'delete') {
+                openConfirmModal(Number(btn.dataset.id), btn.dataset.nome);
+            }
+        });
+
+        // helpers de segurança
+        function escapeHtml(s) { return String(s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])); }
+        function escapeAttr(s) { return String(s).replace(/["']/g, m => ({ '"': '&quot;', "'": '&#39;' }[m])); }
+
+        // TOASTS
+        function showToast(msg, type = 'info') {
+            const box = document.createElement('div');
+            box.className = `toast ${type}`;
+            box.textContent = msg;
+            document.getElementById('toastContainer').appendChild(box);
+            setTimeout(() => box.classList.add('in'), 10);
+            setTimeout(() => { box.classList.remove('in'); setTimeout(() => box.remove(), 200); }, 3000);
+        }
+
+        const inputBusca = document.getElementById('busca');
+        const btnBuscar = document.getElementById('btnBuscar');
+
+        btnBuscar.addEventListener('click', () => {
+        const termo = (inputBusca.value || '').trim();
+        carregarItens(termo);
+        });
+
+        // (opcional) Enter no input dispara busca
+        inputBusca.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') btnBuscar.click();
+        });
+
+
+        bindModalCommon();
+        carregarItens('');
+    </script> -->
+
+<script>
+  const API = '/api/itens'; // Netlify redirect → /.netlify/functions/itens
+  document.getElementById('y').textContent = new Date().getFullYear();
+
+  const btnNovo   = document.getElementById('btnNovo');
+  const btnPrev   = document.getElementById('btnPrev');
+  const btnNext   = document.getElementById('btnNext');
+  const pageInfo  = document.getElementById('pageInfo');
+  const totalInfo = document.getElementById('totalInfo');
+
+  const inputBusca = document.getElementById('busca');
+  const btnBuscar  = document.getElementById('btnBuscar');
+
+  const PAGE_SIZE = 10;
+
+  let state = {
+    page: 1,     // página atual (1-based)
+    total: 0,    // total de registros no servidor (meta.total)
+    q: ''        // termo de busca
+  };
+
+  // ====== LISTAGEM (com paginação e busca) ======
+  async function carregarItens() {
+    const offset = (state.page - 1) * PAGE_SIZE;
+
+    const params = new URLSearchParams({
+      limit: String(PAGE_SIZE),
+      offset: String(offset)
+    });
+    if (state.q) params.set('q', state.q);
+
+    try {
+      const res = await fetch(`${API}?${params.toString()}`, { cache: 'no-store' });
+      const data = await res.json();
+
+      // backend retorna { items, meta }. Se vier array puro, normaliza.
+      const items = Array.isArray(data) ? data : (data.items || []);
+      const meta  = Array.isArray(data) ? { total: items.length } : (data.meta || {});
+
+      state.total = Number(meta.total ?? items.length ?? 0);
+
+      // se a página atual ultrapassar o total depois de uma busca/remoção, recua p/ a última válida
+      const totalPages = Math.max(1, Math.ceil(state.total / PAGE_SIZE));
+      if (state.page > totalPages) {
+        state.page = totalPages;
+        return carregarItens(); // refaz com página ajustada
+      }
+
+      renderTabela(items);
+      renderPaginacao();
+    } catch (e) {
+      console.error(e);
+      document.getElementById('listaItens').innerHTML =
+        `<tr><td colspan="3" class="muted">Falha ao carregar.</td></tr>`;
+      pageInfo.textContent = '';
+      totalInfo.textContent = '';
+      btnPrev.disabled = btnNext.disabled = true;
+      showToast('Erro ao carregar itens.', 'error');
+    }
+  }
+
+  function renderTabela(items) {
+    const tbody = document.getElementById('listaItens');
+    tbody.innerHTML = '';
+    if (!items.length) {
+      tbody.innerHTML = `<tr><td colspan="3" class="muted">Nenhum item encontrado.</td></tr>`;
+      return;
+    }
+    for (const item of items) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escapeHtml(item.nome_item ?? '')}</td>
+        <td>
+          <span class="badge ${item.ativo ? 'badge-on' : 'badge-off'}">
+            ${item.ativo ? 'Sim' : 'Não'}
+          </span>
+        </td>
+        <td class="actions">
+          <button class="btn btn-edit"
+            data-action="edit"
+            data-id="${item.id_item}"
+            data-nome="${escapeAttr(item.nome_item ?? '')}"
+            data-ativo="${item.ativo ? 1 : 0}">
+            Editar
+          </button>
+          <button class="btn btn-del"
+            data-action="delete"
+            data-id="${item.id_item}"
+            data-nome="${escapeAttr(item.nome_item ?? '')}">
+            Excluir
+          </button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    }
+  }
+
+  function renderPaginacao() {
+    const totalPages = Math.max(1, Math.ceil(state.total / PAGE_SIZE));
+    const start = state.total === 0 ? 0 : (state.page - 1) * PAGE_SIZE + 1;
+    const end = Math.min(state.page * PAGE_SIZE, state.total);
+
+    pageInfo.textContent = `Página ${state.page} de ${totalPages}`;
+    totalInfo.textContent = state.total
+      ? `Mostrando ${start}–${end} de ${state.total}`
+      : `Nenhum registro`;
+
+    btnPrev.disabled = state.page <= 1;
+    btnNext.disabled = state.page >= totalPages;
+  }
+
+  // ====== MODAIS: util ======
+  function openModal(el) {
+    el.classList.add('is-open'); el.setAttribute('aria-hidden', 'false');
+    const f = el.querySelector('input, select, button'); if (f) setTimeout(() => f.focus(), 40);
+    document.body.style.overflow = 'hidden';
+  }
+  function closeModal(el) { el.classList.remove('is-open'); el.setAttribute('aria-hidden', 'true'); document.body.style.overflow = ''; }
+  function bindModalCommon() {
+    document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => closeModal(b.closest('.modal'))));
+    document.querySelectorAll('.modal').forEach(m => m.addEventListener('click', e => { if (e.target.classList.contains('modal')) closeModal(m); }));
+    window.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.modal.is-open').forEach(m => closeModal(m)); });
+  }
+
+  // ====== MODAL FORM (Novo/Editar) ======
+  const modalForm = document.getElementById('modalForm');
+  const mfId = document.getElementById('mf-id');
+  const mfNome = document.getElementById('mf-nome');
+  const mfAtivo = document.getElementById('mf-ativo');
+  const mfTitle = document.getElementById('mf-title');
+  const mfSubmit = document.getElementById('mf-submit');
+  const errNome = document.getElementById('err-nome');
+  const errAtivo = document.getElementById('err-ativo');
+
+  btnNovo.addEventListener('click', () => openFormModal('novo'));
+
+  function resetErrors() {
+    errNome.textContent = '';
+    errAtivo.textContent = '';
+    mfNome.classList.remove('invalid');
+    mfAtivo.classList.remove('invalid');
+  }
+
+  function openFormModal(mode, data = null) {
+    resetErrors();
+    mfTitle.textContent = mode === 'editar' ? 'Editar item' : 'Novo item';
+    mfSubmit.textContent = mode === 'editar' ? 'Salvar alterações' : 'Salvar';
+    mfId.value = data?.id ?? '';
+    mfNome.value = data?.nome ?? '';
+    mfAtivo.value = data?.ativo ?? '';
+    modalForm.dataset.mode = mode;
+    openModal(modalForm);
+  }
+
+  function validateForm() {
+    resetErrors();
+    let ok = true;
+    if (!mfNome.value.trim()) { errNome.textContent = 'Informe o nome.'; mfNome.classList.add('invalid'); ok = false; }
+    if (mfAtivo.value !== '0' && mfAtivo.value !== '1') { errAtivo.textContent = 'Selecione Ativo ou Inativo.'; mfAtivo.classList.add('invalid'); ok = false; }
+    return ok;
+  }
+
+  document.getElementById('formItem').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!validateForm()) { showToast('Preencha os campos obrigatórios.', 'error'); return; }
+
+    const payload = { nome_item: mfNome.value.trim(), ativo: Number(mfAtivo.value) };
+    try {
+      const mode = modalForm.dataset.mode;
+      if (mode === 'editar') {
+        payload.id_item = Number(mfId.value);
+        const r = await fetch(API, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (!r.ok) throw new Error('Erro ao atualizar');
+        showToast('Item atualizado com sucesso!', 'success');
+      } else {
+        const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (!r.ok) throw new Error('Erro ao salvar');
+        showToast('Item cadastrado com sucesso!', 'success');
+      }
+      closeModal(modalForm);
+      // mantém a busca e a página atual; após criação, costuma-se ir para a 1ª página,
+      // mas aqui vamos apenas recarregar a página corrente
+      carregarItens();
+    } catch (err) {
+      console.error(err);
+      showToast('Falha ao salvar.', 'error');
+    }
+  });
+
+  // ====== MODAL CONFIRM (Excluir) ======
+  const modalConfirm = document.getElementById('modalConfirm');
+  const mcText = document.getElementById('mc-text');
+  const mcYes = document.getElementById('mc-yes');
+  const mcNo = document.getElementById('mc-no');
+  let deleteId = null;
+
+  mcNo.addEventListener('click', () => {
+    closeModal(modalConfirm);
+    showToast('Ação cancelada.', 'info');
+  });
+
+  function openConfirmModal(id, nome) {
+    deleteId = id;
+    mcText.textContent = `Deseja realmente excluir "${nome}"?`;
+    openModal(modalConfirm);
+  }
+
+  mcYes.addEventListener('click', async () => {
+    if (!deleteId) return;
+    try {
+      const r = await fetch(`${API}?id=${deleteId}`, { method: 'DELETE' });
+      if (!r.ok) throw new Error('Erro ao excluir');
+
+      showToast('Item excluído com sucesso!', 'success');
+      closeModal(modalConfirm);
+
+      // Recarrega a listagem sem perder filtro/página.
+      // Se a página ficar vazia, carregarItens() já corrige para a anterior.
+      carregarItens();
+    } catch (err) {
+      console.error(err);
+      showToast('Falha ao excluir.', 'error');
+    } finally {
+      deleteId = null;
+    }
+  });
+
+  // Delegação dos botões da tabela (editar/excluir)
+  document.getElementById('listaItens').addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const action = btn.dataset.action;
+    if (action === 'edit') {
+      openFormModal('editar', {
+        id: Number(btn.dataset.id),
+        nome: btn.dataset.nome,
+        ativo: String(btn.dataset.ativo)
+      });
+    } else if (action === 'delete') {
+      openConfirmModal(Number(btn.dataset.id), btn.dataset.nome);
+    }
+  });
+
+  // ====== Busca ======
+  btnBuscar.addEventListener('click', () => {
+    state.q = (inputBusca.value || '').trim();
+    state.page = 1;           // ao buscar, volta para a primeira página
+    carregarItens();
+  });
+
+  inputBusca.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') btnBuscar.click();
+  });
+
+  // ====== Navegação de páginas ======
+  btnPrev.addEventListener('click', () => {
+    if (state.page > 1) {
+      state.page -= 1;
+      carregarItens();
+    }
+  });
+  btnNext.addEventListener('click', () => {
+    const totalPages = Math.max(1, Math.ceil(state.total / PAGE_SIZE));
+    if (state.page < totalPages) {
+      state.page += 1;
+      carregarItens();
+    }
+  });
+
+  // helpers de segurança
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])); }
+  function escapeAttr(s) { return String(s).replace(/["']/g, m => ({ '"': '&quot;', "'": '&#39;' }[m])); }
+
+  // TOASTS
+  function showToast(msg, type = 'info') {
+    const box = document.createElement('div');
+    box.className = `toast ${type}`;
+    box.textContent = msg;
+    document.getElementById('toastContainer').appendChild(box);
+    setTimeout(() => box.classList.add('in'), 10);
+    setTimeout(() => { box.classList.remove('in'); setTimeout(() => box.remove(), 200); }, 3000);
+  }
+
+  bindModalCommon();
+  carregarItens(); // primeira carga
+</script>
+
+</body>
+
+</html>

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Controle de Baús</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="./css/style.css" />
+</head>
+
+<body>
+    <!-- background decor -->
+    <div class="bg-noise" aria-hidden="true"></div>
+    <div class="bg-gradient" aria-hidden="true"></div>
+
+    <header class="topbar">
+        <div class="brand">
+            <img src="/img/logo.png" alt="Logo Meraki" class="logo" />
+            <h1><span>CONTROLE</span> de <span>BAÚS</span></h1>
+        </div>
+        <div class="bar-accent" aria-hidden="true"></div>
+    </header>
+
+    <main class="wrap">
+        <section class="grid">
+            <!-- <a class="tile" href="/lancamentos.html">
+                <div class="tile-icon" aria-hidden="true">📥</div>
+                <div class="tile-title">LANÇAMENTOS</div>
+                <p class="tile-desc">Entradas, saídas e transferências.</p>
+            </a>
+
+            <a class="tile" href="/registros.html">
+                <div class="tile-icon" aria-hidden="true">📑</div>
+                <div class="tile-title">HISTÓRICO DE ENTRADA/SAÍDA</div>
+                <p class="tile-desc">Histórico filtrável e exportação.</p>
+            </a> -->
+
+            <!-- <a class="tile" href="/baus.html">
+                <div class="tile-icon" aria-hidden="true">🗄️</div>
+                <div class="tile-title">ITENS BAÚS</div>
+                <p class="tile-desc">Saldos por baú/local.</p>
+            </a> -->
+            
+            <!-- <a class="tile" href="/financeiro.html">
+                <div class="tile-icon" aria-hidden="true">💰</div>
+                <div class="tile-title">CONTROLE DINHEIRO</div>
+                <p class="tile-desc">Custos, média e projeções.</p>
+            </a> -->
+
+<!--             
+            <a class="tile" href="/totais.html">
+                <div class="tile-icon" aria-hidden="true">📊</div>
+                <div class="tile-title">TOTAL DE ITENS EM TODOS OS BAÚS</div>
+                <p class="tile-desc">Consolidado geral e alertas.</p>
+            </a> -->
+
+            <a class="tile" href="./itens.html">
+                <div class="tile-icon" aria-hidden="true">📦</div>
+                <div class="tile-title">ITENS REGISTRADOS</div>
+                <p class="tile-desc">Catálogo de itens</p>
+            </a>
+        </section>
+    </main>
+
+    <footer class="foot">
+        <small>© <span id="y"></span> Meraki • v1.0</small>
+    </footer>
+
+    <script>
+        // ano no rodapé
+        document.getElementById('y').textContent = new Date().getFullYear();
+        // acessibilidade: permite Enter/Space ativar tile
+        document.querySelectorAll('.tile').forEach(t => {
+            t.setAttribute('role', 'button');
+            t.setAttribute('tabindex', '0');
+            t.addEventListener('keydown', e => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); t.click(); }
+            });
+        });
+    </script>
+</body>
+
+</html>

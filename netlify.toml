@@ -1,0 +1,12 @@
+[build]
+  publish = "public"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# opcional: rotas amigáveis
+[[redirects]]
+  from = "/api/itens"
+  to = "/.netlify/functions/itens"
+  status = 200
