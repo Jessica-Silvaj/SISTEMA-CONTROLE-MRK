@@ -90,7 +90,7 @@ export default async function handler(request) {
 
                 // Duplicado (exclui o próprio id)
                 const [dupes] = await pool.query(
-                    'SELECT 1 FROM itens WHERE UPPER(nome_item) = UPPER(?) AND id_item <> ? LIMIT 1',
+                    'SELECT * FROM itens WHERE UPPER(nome_item) = UPPER(?) AND id_item <> ? LIMIT 1',
                     [nomeNovo, id]
                 );
                 if (dupes.length > 0) {
@@ -121,8 +121,11 @@ export default async function handler(request) {
             if (!id) return json(400, { error: 'id é obrigatório' });
 
             // Se preferir "soft delete", troque por: UPDATE itens SET ativo = 0, atualizado_em = CURRENT_TIMESTAMP WHERE id_item = ?
-            const [res] = await pool.execute(`DELETE FROM itens WHERE id_item = ?`, [id]);
-            return json(200, { deleted: res.affectedRows > 0 });
+            await pool.execute(
+            `UPDATE itens SET ativo = 0, atualizado_em = CURRENT_TIMESTAMP WHERE id_item = ?`,
+            [id]
+            );
+            return json(204, null)
         }
 
         return json(405, { error: 'Método não suportado' });
