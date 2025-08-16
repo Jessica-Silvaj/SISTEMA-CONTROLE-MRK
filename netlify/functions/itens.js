@@ -6,128 +6,217 @@ export default async function handler(request) {
     try {
         const pool = getPool();
 
+        //   Listar
+        // LISTAR
         if (request.method === 'GET') {
+            const { searchParams } = new URL(request.url);
 
-            const url = new URL(request.url);
-            const q = (url.searchParams.get('q') || '').trim();
-            const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 100, 1), 1000);
-            const offset = Math.max(Number(url.searchParams.get('offset')) || 0, 0);
+            const qRaw = (searchParams.get('q') || '').trim();
+            const limit = Math.min(Math.max(parseInt(searchParams.get('limit') ?? '100', 10) || 100, 1), 1000);
+            const offset = Math.max(parseInt(searchParams.get('offset') ?? '0', 10) || 0, 0);
 
-            const where = [];
-            const params = [];
+            const hasQ = qRaw.length > 0;
 
-            if (q) {
-                where.push('i.nome_item LIKE ?');
-                params.push(`%${q}%`);
-            }
+            // Como a coluna está em utf8mb4_*_ci, LIKE já é case/acento-insensitive
+            const whereSQL = hasQ ? 'WHERE i.nome_item LIKE ?' : '';
+            const listParams = hasQ ? [`%${qRaw}%`, limit, offset] : [limit, offset];
 
-            const whereSQL = where.length ? `WHERE ${where.join(' AND ')}` : '';
+            const listSQL = `
+                SELECT i.id_item, i.nome_item, i.ativo, i.criado_em, i.atualizado_em
+                FROM itens i
+                ${whereSQL}
+                ORDER BY i.nome_item ASC
+                LIMIT ? OFFSET ?
+                `;
 
-            // total geral (sem filtro) — útil para paginação no front
-            const [metaRows] = await pool.query(
-                `SELECT COUNT(*) AS total, MAX(atualizado_em) AS last_updated FROM itens`
-            );
-            const { total, last_updated } = metaRows[0] || {};
+            const metaSQL = `
+                SELECT COUNT(*) AS total, MAX(atualizado_em) AS last_updated
+                FROM itens
+            `;
 
-            // busca paginada (com filtro quando houver q)
-            const [rows] = await pool.query(
-                `
-        SELECT i.id_item, i.nome_item, i.ativo, i.criado_em, i.atualizado_em
-        FROM itens i
-        ${whereSQL}
-        ORDER BY i.nome_item ASC
-        LIMIT ? OFFSET ?
-        `,
-                [...params, limit, offset]
-            );
+            const [[rows], [metaRows]] = await Promise.all([
+                pool.query(listSQL, listParams),
+                pool.query(metaSQL),
+            ]);
+
+            const { total = 0, last_updated = null } = metaRows?.[0] ?? {};
 
             return json(200, {
                 items: rows,
-                meta: { total, limit, offset, last_updated }
+                meta: { total, limit, offset, last_updated },
             });
         }
+
         // ===================== POST (criar) =====================
         if (request.method === 'POST') {
             const body = await request.json().catch(() => ({}));
-            const nome = (body.nome_item || '').trim();
-            const ativo = Number(body.ativo ?? 1) ? 1 : 0;
-            if (!nome) return json(400, { error: 'nome_item é obrigatório' });
 
-            const [dupes] = await pool.query(
-                'SELECT 1 FROM itens WHERE UPPER(nome_item) = UPPER(?) LIMIT 1',
-                [nome]
-            );
-            if (dupes.length > 0) {
-                return json(400, {
-                    error: 'Já existe um item com este nome.',
-                    fieldErrors: { nome_item: 'Já existe um item com este nome.' }
-                });
+            // Normaliza minimamente (compatível com nome_norm = TRIM(nome_item))
+            const normalizeName = (s) =>
+                String(s ?? '')
+                    .normalize('NFKC')     // forma canônica (acentos etc.)
+                    .replace(/\s+/g, ' ')  // colapsa múltiplos espaços internos
+                    .trim();
+
+            // Coerção robusta para bit
+            const toBit = (v) => {
+                if (typeof v === 'string') v = v.trim().toLowerCase();
+                return (v === 1 || v === true || v === '1' || v === 'true' || v === 'on' || v === 'yes') ? 1 : 0;
+            };
+
+            const nome = normalizeName(body.nome_item);
+            const ativo = toBit(body.ativo ?? 1);
+
+            if (!nome) {
+                return json(400, { error: 'nome_item é obrigatório', fieldErrors: { nome_item: 'Obrigatório' } });
             }
 
-            const [res] = await pool.execute(
-                `INSERT INTO itens (nome_item, ativo) VALUES (UPPER(?), ?)`,
-                [nome, ativo]
-            );
-            return json(201, { id_item: res.insertId });
+            try {
+                // Confia no UNIQUE (nome_norm) para bloquear duplicados (insensitive).
+                const [res] = await pool.execute(
+                    'INSERT INTO itens (nome_item, ativo) VALUES (?, ?)',
+                    [nome, ativo]
+                );
+                return json(201, { id_item: res.insertId });
+            } catch (err) {
+                // ER_DUP_ENTRY = 1062 (MySQL/MariaDB)
+                if (err && (err.code === 'ER_DUP_ENTRY' || err.errno === 1062)) {
+                    return json(400, {
+                        error: 'Já existe um item com este nome.',
+                        fieldErrors: { nome_item: 'Já existe um item com este nome.' }
+                    });
+                }
+                throw err; // outros erros (timeout, conexão, etc.)
+            }
         }
+
 
         // ===================== PUT (atualizar) =====================
         if (request.method === 'PUT') {
             const body = await request.json().catch(() => ({}));
-            const id = Number(body.id_item);
+
+            const id = Number.parseInt(body.id_item, 10);
             if (!id) return json(400, { error: 'id_item é obrigatório' });
 
-            const fields = [];
+            // Normaliza nome de forma estável (compatível com nome_norm = TRIM(nome_item))
+            const normalizeName = (s) =>
+                String(s ?? '')
+                    .normalize('NFKC')     // normaliza forma/acentos
+                    .replace(/\s+/g, ' ')  // colapsa múltiplos espaços
+                    .trim();
+
+            const sets = [];
             const params = [];
-            if (typeof body.nome_item === 'string') {
-                const nomeNovo = body.nome_item.trim();
+
+            if (Object.prototype.hasOwnProperty.call(body, 'nome_item')) {
+                if (typeof body.nome_item !== 'string') {
+                    return json(400, {
+                        error: 'nome_item inválido',
+                        fieldErrors: { nome_item: 'Deve ser uma string.' }
+                    });
+                }
+                const nomeNovo = normalizeName(body.nome_item);
                 if (!nomeNovo) {
                     return json(400, {
                         error: 'nome_item é obrigatório',
                         fieldErrors: { nome_item: 'Preencha o nome do item.' }
                     });
                 }
+                // Não usamos UPPER() — preserva a forma inserida; unicidade fica no UNIQUE(nome_norm)
+                sets.push('nome_item = ?');
+                params.push(nomeNovo);
+            }
 
-                // Duplicado (exclui o próprio id)
-                const [dupes] = await pool.query(
-                    'SELECT 1 FROM itens WHERE UPPER(nome_item) = UPPER(?) AND id_item <> ? LIMIT 1',
-                    [nomeNovo, id]
+            if (Object.prototype.hasOwnProperty.call(body, 'ativo')) {
+                const v = body.ativo;
+                const bit = (typeof v === 'string')
+                    ? (['1', 'true', 'on', 'yes'].includes(v.trim().toLowerCase()) ? 1 : 0)
+                    : (v ? 1 : 0);
+                sets.push('ativo = ?');
+                params.push(bit);
+            }
+
+            if (sets.length === 0) {
+                return json(400, { error: 'Nada para atualizar' });
+            }
+
+            // Sempre atualiza atualizado_em
+            sets.push('atualizado_em = CURRENT_TIMESTAMP');
+
+            params.push(id);
+
+            try {
+                const [res] = await pool.execute(
+                    `UPDATE itens SET ${sets.join(', ')} WHERE id_item = ?`,
+                    params
                 );
-                if (dupes.length > 0) {
+
+                // Se quiser diferenciar "não encontrado":
+                // if (res.affectedRows === 0) return json(404, { error: 'Item não encontrado' });
+
+                return json(200, { updated: res.affectedRows > 0 });
+            } catch (err) {
+                // ER_DUP_ENTRY = 1062 (MySQL/MariaDB) — conflito com UNIQUE(nome_norm)
+                if (err && (err.code === 'ER_DUP_ENTRY' || err.errno === 1062)) {
                     return json(400, {
                         error: 'Já existe um item com este nome.',
                         fieldErrors: { nome_item: 'Já existe um item com este nome.' }
                     });
                 }
-                fields.push('nome_item = UPPER(?)');
-                params.push(nomeNovo);
-
+                throw err; // outros erros (conexão, timeout, etc.)
             }
-            if (body.ativo !== undefined) { fields.push('ativo = ?'); params.push(Number(body.ativo) ? 1 : 0); }
-            if (!fields.length) return json(400, { error: 'Nada para atualizar' });
-
-            params.push(id);
-            const [res] = await pool.execute(
-                `UPDATE itens SET ${fields.join(', ')}, atualizado_em = CURRENT_TIMESTAMP WHERE id_item = ?`,
-                params
-            );
-            return json(200, { updated: res.affectedRows > 0 });
         }
 
         // ===================== DELETE (excluir) =====================
         if (request.method === 'DELETE') {
-            const url = new URL(request.url);
-            const id = Number(url.searchParams.get('id'));
-            if (!id) return json(400, { error: 'id é obrigatório' });
+            const { searchParams } = new URL(request.url);
 
-            // Se preferir "soft delete", troque por: UPDATE itens SET ativo = 0, atualizado_em = CURRENT_TIMESTAMP WHERE id_item = ?
-            const [res] = await pool.execute(`DELETE FROM itens WHERE id_item = ?`, [id]);
-            return json(200, { deleted: res.affectedRows > 0 });
+            const idParam = (searchParams.get('id') || '').trim();
+            if (!idParam) return json(400, { error: 'id é obrigatório' });
+
+            // Aceita 1 ou vários ids: ?id=10,11,12
+            const ids = idParam
+                .split(',')
+                .map(s => parseInt(s.trim(), 10))
+                .filter(n => Number.isInteger(n) && n > 0);
+
+            if (ids.length === 0) return json(400, { error: 'id inválido' });
+
+            const doSoft = /^(1|true|yes|on)$/i.test((searchParams.get('soft') || '').trim());
+
+            // IMPORTANTE: .execute não expande arrays em IN (?)
+            const placeholders = ids.map(() => '?').join(',');
+
+            try {
+                let res;
+                if (doSoft) {
+                    [res] = await pool.execute(
+                        `UPDATE itens
+                            SET ativo = 0, atualizado_em = CURRENT_TIMESTAMP
+                            WHERE id_item IN (${placeholders}) AND ativo = 1`,
+                        ids
+                    );
+                } else {
+                    [res] = await pool.execute(
+                        `DELETE FROM itens
+          WHERE id_item IN (${placeholders})`,
+                        ids
+                    );
+                }
+
+                return json(200, {
+                    deleted: res.affectedRows > 0,
+                    count: res.affectedRows,
+                    soft: doSoft
+                });
+            } catch (err) {
+                console.error('DELETE itens failed', err);
+                return json(500, { error: 'Falha no servidor', detail: err.message, code: err.code });
+            }
         }
 
-        return json(405, { error: 'Método não suportado' });
     } catch (err) {
-        console.error(err);
-        return json(500, { error: 'Falha no servidor', detail: err.message });
+        console.error('Erro no handler de itens:', err);
+        return json(500, { error: 'Erro interno do servidor', details: err.message });
     }
 }

@@ -3,15 +3,16 @@ USE controle_itens;
 
 CREATE TABLE IF NOT EXISTS itens (
     id_item       INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    nome_item     VARCHAR(120) NOT NULL,
+    nome_item     VARCHAR(120)  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+    nome_norm     VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci AS (TRIM(nome_item)) STORED,
     ativo         TINYINT(1) NOT NULL DEFAULT 1,
-    criado_em     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    atualizado_em TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_itens_nome (nome_item),
-    KEY idx_itens_ativo (ativo)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    criado_em     TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    atualizado_em TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_itens_nome_norm (nome_norm),
+    KEY idx_itens_ativo_nome (ativo, nome_norm)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT INTO itens (nome_item, ativo) VALUES
+INSERT IGNORE INTO itens (nome_item, ativo) VALUES
 ('AK COMPACT', 1),
 ('ALUMINIO', 1),
 ('ACETONA', 1),

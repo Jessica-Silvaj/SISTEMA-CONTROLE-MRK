@@ -257,6 +257,19 @@
       mfAtivo.classList.remove('invalid');
     }
 
+    function applyFieldErrors(fieldErrors = {}) {
+    // nome_item
+    if (fieldErrors.nome_item) {
+      errNome.textContent = fieldErrors.nome_item;
+      mfNome.classList.add('invalid');
+    }
+    // ativo
+    if (fieldErrors.ativo) {
+      errAtivo.textContent = fieldErrors.ativo;
+      mfAtivo.classList.add('invalid');
+    }
+  }
+
     function openFormModal(mode, data = null) {
       resetErrors();
       mfTitle.textContent = mode === 'editar' ? 'Editar item' : 'Novo item';
@@ -278,28 +291,81 @@
 
     document.getElementById('formItem').addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (!validateForm()) { showToast('Preencha os campos obrigatórios.', 'error'); return; }
 
-      const payload = { nome_item: mfNome.value.trim(), ativo: Number(mfAtivo.value) };
-      try {
-        const mode = modalForm.dataset.mode;
-        if (mode === 'editar') {
-          payload.id_item = Number(mfId.value);
-          const r = await fetch(API, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-          if (!r.ok) throw new Error('Erro ao atualizar');
-          showToast('Item atualizado com sucesso!', 'success');
-        } else {
-          const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-          if (!r.ok) throw new Error('Erro ao salvar');
-          showToast('Item cadastrado com sucesso!', 'success');
+      const form = e.currentTarget;
+      const submitBtn = e.submitter || form.querySelector('[type="submit"]');
+
+      // limpa erros anteriores
+      if (typeof errNome !== 'undefined') errNome.textContent = '';
+      if (typeof errAtivo !== 'undefined') errAtivo.textContent = '';
+      if (typeof mfNome  !== 'undefined') mfNome.classList.remove('invalid');
+      if (typeof mfAtivo !== 'undefined') mfAtivo.classList.remove('invalid');
+
+      if (!validateForm()) { 
+        showToast('Preencha os campos obrigatórios.', 'error'); 
+        return; 
+      }
+
+      const nomeSan = mfNome.value
+        .normalize('NFKC')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLocaleUpperCase('pt-BR');
+
+      const payload = {
+        nome_item: nomeSan,
+        ativo: Number(mfAtivo.value)
+      };
+      const mode = modalForm.dataset.mode;
+
+      // helpers
+      const applyFieldErrors = (fe = {}) => {
+        if (fe.nome_item && typeof errNome !== 'undefined') {
+          errNome.textContent = fe.nome_item;
+          mfNome?.classList.add('invalid');
         }
+        if (fe.ativo && typeof errAtivo !== 'undefined') {
+          errAtivo.textContent = fe.ativo;
+          mfAtivo?.classList.add('invalid');
+        }
+      };
+
+      submitBtn?.setAttribute('disabled', 'disabled');
+
+      try {
+        const isEdit = mode === 'editar';
+        if (isEdit) payload.id_item = Number(mfId.value);
+
+        const r = await fetch(API, {
+          method: isEdit ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await r.json().catch(() => ({}));
+
+        if (!r.ok) {
+          // mostra mensagens do backend
+          applyFieldErrors(data.fieldErrors);
+          showToast(
+            data.error || (isEdit ? 'Erro ao atualizar' : 'Erro ao salvar'),
+            'error'
+          );
+
+          // foca no primeiro campo com erro, se houver
+          if (data.fieldErrors?.nome_item) mfNome?.focus();
+          else if (data.fieldErrors?.ativo) mfAtivo?.focus();
+          return;
+        }
+
+        showToast(isEdit ? 'Item atualizado com sucesso!' : 'Item cadastrado com sucesso!', 'success');
         closeModal(modalForm);
-        // mantém a busca e a página atual; após criação, costuma-se ir para a 1ª página,
-        // mas aqui vamos apenas recarregar a página corrente
-        carregarItens();
+        carregarItens(); // mantém busca e página atuais
       } catch (err) {
         console.error(err);
         showToast('Falha ao salvar.', 'error');
+      } finally {
+        submitBtn?.removeAttribute('disabled');
       }
     });
 
